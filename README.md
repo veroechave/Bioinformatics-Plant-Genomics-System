@@ -12,5 +12,5 @@ This repository showcases the design and implementation of a custom botanical da
 * **Input Validation:** Employs Regular Expressions (**Regex**) for nomenclature cleaning.
 
 # Technologies
-**Language:** Python 3.x
-**Core Libraries:** `json`, `re`, `difflib`, `os`.
+* **Language:** Python 3.x
+* **Core Libraries:** `json`, `re`, `difflib`, `os`.
