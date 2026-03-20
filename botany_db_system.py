@@ -1,12 +1,13 @@
 # PROJECT: INTERACTIVE DATABASE MANAGEMENT WITH PYTHON
 # AUTHOR: Verónica Mar Echave-Sustaeta Hernán
 
-#!/usr/bin/env python3
-
 import os          # To check if the file exists in the operating system
 import json        # To save and read structured data (lists, dictionaries) in text files
 import re          # For name cleaning using regular expressions
 import difflib     # To compare text and find similarities (correction of user typos)
+import matplotlib.pyplot as plt  # Library for generating charts (histograms)
+from collections import Counter  # Tool for counting amino acid frequencies
+from Bio.Seq import Seq          # Main Biopython object for sequence manipulation
 
 # Define a constant with the Name of the file where the database will be saved
 FILE = "botany_db.txt"
@@ -308,6 +309,172 @@ def ask_spain_provinces(plant_name):
     
     return accumulated_list # Return the full list to the main function
 
+# DNA validation
+def ask_valid_dna(plant_name):
+    print(f"\n DNA SEQUENCING FOR '{plant_name.upper()}'")
+    while True:
+        # We ask for the string and normalize it
+        dna_raw = input("Enter the DNA sequence (A, T, C, G) or ENTER to leave it empty: ").strip().upper()
+        
+        # If it is empty, we allow exiting without data
+        if not dna_raw:
+            print("DNA sequence not registered")
+            return "No data"
+
+        # Regex: Only valid bases
+        dna_clean = re.sub(r'[^ACGT]', '', dna_raw)
+        
+        # If nothing is left after cleaning
+        if not dna_clean:
+            print("The sequence can only contain nitrogenous bases (A, T, C, G)")
+            continue
+
+        # DIRTY DETECTION
+        if dna_raw != dna_clean:
+            print(f"I detected invalid characters in '{dna_raw}'")
+            res = ask_secure_confirmation(f"      Did you mean '{dna_clean}'? (y/n): ")
+            
+            if res is None: return None # Abort
+            if res == 'n':
+                print("Okay, enter the correct sequence")
+                continue # Re-ask
+            # If they say 'y', we proceed with dna_clean
+
+        # BIOLOGICAL VALIDATION (Length and Codons)
+        # Warning if it's very short
+        if len(dna_clean) < 3:
+            print("Notice: The sequence is very short (less than one codon)")
+            res = ask_secure_confirmation("      Save anyway? (y/n): ")
+            if res != 'y': continue
+
+        # Warning if it's not a multiple of 3 
+        elif len(dna_clean) % 3 != 0:
+            print(f"Biological Error: The sequence has {len(dna_clean)} bases")
+            print("For protein translation to be correct, the length must be a multiple of 3")
+            print("(Codons go in 3s, you have extra or missing letters)")
+            res = ask_secure_confirmation("      Save anyway? (y/n): ")
+            if res != 'y': continue
+
+        # Save if everything is correct 
+        print(f"Sequence saved: {dna_clean[:10]}... (length: {len(dna_clean)})")
+        return dna_clean
+
+# Search plants by DNA sequence 
+def search_by_dna(db):
+    while True:
+        print("\n" + " 🧬"*30)
+        print("\n=== 🧬 SEARCH BY DNA SEQUENCE 🧬 ===")
+        print()
+        
+        ## We request the DNA substring to search for and normalize it
+        dna_query = input("Enter the DNA sequence to search (or ENTER to exit): ").strip().upper()
+        if not dna_query: break
+        
+        ## We validate that it only contains valid bases using Regex
+        dna_clean = re.sub(r'[^ACGT]', '', dna_query)
+        
+        ## If we detect "garbage" characters, we clean them and ask if the user wants to continue
+        if dna_query != dna_clean:
+            print(f"I have cleaned invalid characters: '{dna_clean}'")
+            res = ask_secure_confirmation("      Is this correct? (y/n): ")
+            if res != 'y': continue
+            dna_query = dna_clean
+
+        results = []
+        ## We iterate through all the plants in the database
+        for name, data in db.items():
+            dna_plant = data.get("dna", "")
+            ## We check if the searched sequence is contained within the plant's DNA
+            if dna_query in dna_plant:
+                results.append(name)
+        
+        if results:
+            print("\n" + "."*30)
+            print(f"\nPlants containing the sequence '{dna_query}': {', '.join(results)}")
+            print("\n" + "."*30)
+        else:
+            print(f"No plant contains the sequence '{dna_query}'.")
+            
+        res = ask_secure_confirmation("\nNew DNA search? (y/n): ")
+        if res is None or res == 'n': break
+
+        
+# Genetic and Proteomic Analysis with Biopython and Matplotlib 
+def analyze_genetics(db):
+    while True:
+        print("\n" + " 📊"*30)
+        print("\n=== 🧪 GENETIC AND PROTEIN ANALYSIS 🧪 ===")
+        print()
+        
+        ## We reuse the plant search logic to select one
+        entry = input("Name of the plant to analyze (or ENTER to exit): ").strip()
+        if not entry: break
+        
+        clean_name = re.sub(r'[^a-zA-ZáéíóúüÁÉÍÓÚÜñÑ]', '', entry).strip().capitalize()
+        
+        ## Fuzzy search to find the plant
+        matches = difflib.get_close_matches(clean_name, list(db.keys()), n=1, cutoff=0.6)
+        if not matches:
+            print("Plant not found.")
+            continue
+            
+        selected_plant = matches[0]
+        ## Confirm selection
+        res = ask_secure_confirmation(f"   Analyze plant: '{selected_plant}'? (y/n): ")
+        if res != 'y': continue
+        
+        ## Retrieve data
+        data = db[selected_plant]
+        dna_sequence = data.get("dna", "")
+        
+        if not dna_sequence or dna_sequence == "No data":
+            print("This plant has no DNA sequence registered.")
+            continue
+            
+        print("-" * 50)
+        print(f"Original DNA: {dna_sequence[:30]}..." if len(dna_sequence)>30 else dna_sequence)
+        
+        ## BIOPYTHON: Transcription and Translation
+        try:
+            seq_obj = Seq(dna_sequence) ## Create Seq object
+            
+            ## Transcribe (DNA -> RNA) (Changes T to U)
+            messenger_rna = seq_obj.transcribe()
+            print(f"Transcription (mRNA): {messenger_rna[:30]}..." if len(messenger_rna)>30 else messenger_rna)
+            
+            ## Translate (RNA -> Protein)
+            ## Note: Biopython throws a warning if length is not a multiple of 3, but it works
+            protein = seq_obj.translate()
+            print(f"Translation (Protein): {protein[:30]}..." if len(protein)>30 else protein)
+            
+            ## MATPLOTLIB: Amino acid histogram
+            print("\n📊 Generating amino acid histogram...")
+            
+            ## We count the frequency of each amino acid in the protein
+            aa_count = Counter(protein)
+            
+            ## Prepare data for the chart
+            amino_acids = list(aa_count.keys())
+            frequencies = list(aa_count.values())
+            
+            ## Create the bar chart
+            plt.figure(figsize=(10, 5))
+            plt.bar(amino_acids, frequencies, color='teal')
+            plt.xlabel('Amino Acids')
+            plt.ylabel('Frequency')
+            plt.title(f'Proteomic Profile of {selected_plant}')
+            plt.grid(axis='y', linestyle='--', alpha=0.7)
+            
+            ## Show the chart
+            print("Chart generated. Close the chart window to continue.")
+            plt.show()
+            
+        except Exception as e:
+            print(f"Error during biological analysis: {e}")
+
+        res = ask_secure_confirmation("\nAnalyze another plant? (y/n): ")
+        if res is None or res == 'n': break
+
 # MAIN MENU FUNCTIONS
 
 # OPTION 1: Add new plant
@@ -335,11 +502,16 @@ def introduce_plant(db):
         provinces = ask_spain_provinces(name) 
         if provinces is None: break # If user aborted, exit
         
+        # DNA integration
+	dna = ask_valid_dna(name)
+        if dna is None: break 
+        
         # Save everything in the main dictionary
         db[name] = {
             "cm": size,
             "habitat": habitat,
-            "provinces": provinces
+            "provinces": provinces,
+            "dna": dna
         }
         print(f"🔹 Plant '{name}' successfully saved")
 
@@ -438,6 +610,11 @@ def show_plant_data(db):
             
             # For provinces, join list with commas. If list is empty, show "No data".
             print(f"Provinces: {', '.join(d['provincias']) if d['provincias'] else 'No data'}")
+            
+            # DNA Preview in technical sheet 
+            dna_preview = d.get('dna', 'No data')
+            if len(dna_preview) > 30: dna_preview = dna_preview[:30] + "..."
+            print(f"DNA Sequence: {dna_preview}")
             print("\n" + "."*30)
             
         # Ask if they want to perform another search before returning to main menu
@@ -680,9 +857,7 @@ def search_by_province(db):
         
     print("\n" + " 📌" *25) 
 
-# ===========================
 # 🚀 PROGRAM EXECUTION
-# ===========================
 
 def main():
     """Main function controlling program flow."""
@@ -700,6 +875,8 @@ def main():
 🌱 4 Search plants by size range
 🌱 5 Search plants by habitat
 🌱 6 Search plants by province
+🧬 7 Search plants by DNA sequence
+🧪 8 Genetic and Protein Analysis (Plot)
 🌱 0 Save and exit
 
         """)
@@ -713,13 +890,15 @@ def main():
         elif option == "4": search_by_size(db)
         elif option == "5": search_by_habitat(db)
         elif option == "6": search_by_province(db)
+        elif option == "7": search_by_dna(db) 
+        elif option == "8": analyze_genetics(db)
         elif option == "0":
             # Save everything before closing to not lose data
             save_db(FILE, db) 
             print("👋 Exiting program... See you next time!")
             break # Break infinite loop and program ends
         else:
-            print("Invalid option ❌ REMINDER: Enter a number from 0 to 6")
+            print("Invalid option ❌ REMINDER: Enter a number from 0 to 8")
             
 # Standard Python entry point.
 # If running this file directly, main() is called.
